@@ -35,3 +35,13 @@ The planned architecture follows this structure:
 - **OpenAPI parsing**: openapiv3, serde_yaml, serde_json
 - **CLI**: clap
 - **Error handling**: anyhow, thiserror
+
+## Testing Requirements
+
+For high and medium priority features, always write:
+
+- **Unit tests**: Test individual functions and modules in isolation
+- **Integration tests**: Test interactions between modules
+- **E2E tests**: Test the application as a whole from user perspective
+
+Run tests with `cargo test` before committing.
