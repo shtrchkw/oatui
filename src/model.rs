@@ -27,7 +27,7 @@ impl std::fmt::Display for HttpMethod {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ParameterLocation {
     Path,
     Query,

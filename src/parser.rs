@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -106,21 +106,25 @@ fn convert_operation(
     path_params: &[ReferenceOr<OApiParameter>],
     openapi: &OpenAPI,
 ) -> Endpoint {
-    let mut parameters = Vec::new();
+    // Use HashMap to handle parameter override (operation-level overrides path-level)
+    // Key: (name, location)
+    let mut param_map: HashMap<(String, ParameterLocation), Parameter> = HashMap::new();
 
-    // Add path-level parameters
+    // Add path-level parameters first
     for param in path_params {
         if let Some(p) = convert_parameter(param, openapi) {
-            parameters.push(p);
+            param_map.insert((p.name.clone(), p.location.clone()), p);
         }
     }
 
-    // Add operation-level parameters
+    // Add operation-level parameters (overrides path-level if same name+location)
     for param in &op.parameters {
         if let Some(p) = convert_parameter(param, openapi) {
-            parameters.push(p);
+            param_map.insert((p.name.clone(), p.location.clone()), p);
         }
     }
+
+    let parameters: Vec<Parameter> = param_map.into_values().collect();
 
     let request_body = op.request_body.as_ref().and_then(|rb| match rb {
         ReferenceOr::Item(body) => {
@@ -180,37 +184,24 @@ fn convert_operation(
 fn convert_parameter(param: &ReferenceOr<OApiParameter>, openapi: &OpenAPI) -> Option<Parameter> {
     let param = resolve_parameter(param, openapi)?;
 
-    let location = match param {
-        OApiParameter::Path { .. } => ParameterLocation::Path,
-        OApiParameter::Query { .. } => ParameterLocation::Query,
-        OApiParameter::Header { .. } => ParameterLocation::Header,
-        OApiParameter::Cookie { .. } => ParameterLocation::Cookie,
+    let (location, parameter_data) = match param {
+        OApiParameter::Path { parameter_data, .. } => (ParameterLocation::Path, parameter_data),
+        OApiParameter::Query { parameter_data, .. } => (ParameterLocation::Query, parameter_data),
+        OApiParameter::Header { parameter_data, .. } => (ParameterLocation::Header, parameter_data),
+        OApiParameter::Cookie { parameter_data, .. } => (ParameterLocation::Cookie, parameter_data),
     };
 
-    let (name, description, required, schema) = match param {
-        OApiParameter::Path { parameter_data, .. }
-        | OApiParameter::Query { parameter_data, .. }
-        | OApiParameter::Header { parameter_data, .. }
-        | OApiParameter::Cookie { parameter_data, .. } => {
-            let schema_type = match &parameter_data.format {
-                ParameterSchemaOrContent::Schema(s) => schema_type_to_string(s, openapi),
-                ParameterSchemaOrContent::Content(_) => None,
-            };
-            (
-                parameter_data.name.clone(),
-                parameter_data.description.clone(),
-                parameter_data.required,
-                schema_type,
-            )
-        }
+    let schema_type = match &parameter_data.format {
+        ParameterSchemaOrContent::Schema(s) => schema_type_to_string(s, openapi),
+        ParameterSchemaOrContent::Content(_) => None,
     };
 
     Some(Parameter {
-        name,
+        name: parameter_data.name.clone(),
         location,
-        description,
-        required,
-        schema_type: schema,
+        description: parameter_data.description.clone(),
+        required: parameter_data.required,
+        schema_type,
     })
 }
 
@@ -259,21 +250,21 @@ fn schema_type_to_string(schema: &ReferenceOr<Schema>, _openapi: &OpenAPI) -> Op
             Some(name.to_string())
         }
         ReferenceOr::Item(schema) => match &schema.schema_kind {
-            openapiv3::SchemaKind::Type(t) => Some(type_to_string(t)),
+            openapiv3::SchemaKind::Type(t) => Some(type_to_string(t).to_string()),
             openapiv3::SchemaKind::Any(any) => any.typ.clone(),
             _ => None,
         },
     }
 }
 
-fn type_to_string(t: &Type) -> String {
+fn type_to_string(t: &Type) -> &'static str {
     match t {
-        Type::String(_) => "string".to_string(),
-        Type::Number(_) => "number".to_string(),
-        Type::Integer(_) => "integer".to_string(),
-        Type::Boolean(_) => "boolean".to_string(),
-        Type::Array(_) => "array".to_string(),
-        Type::Object(_) => "object".to_string(),
+        Type::String(_) => "string",
+        Type::Number(_) => "number",
+        Type::Integer(_) => "integer",
+        Type::Boolean(_) => "boolean",
+        Type::Array(_) => "array",
+        Type::Object(_) => "object",
     }
 }
 
@@ -429,5 +420,76 @@ mod tests {
         assert_eq!(format!("{}", ParameterLocation::Path), "path");
         assert_eq!(format!("{}", ParameterLocation::Query), "query");
         assert_eq!(format!("{}", ParameterLocation::Header), "header");
+    }
+
+    #[test]
+    fn test_parameter_override_uses_path_level_by_default() {
+        let spec = parse_file("tests/fixtures/parameter-override.yaml").unwrap();
+
+        // GET uses path-level parameters (no override)
+        let get_item = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/items/{itemId}" && e.method == HttpMethod::Get)
+            .unwrap();
+
+        assert_eq!(get_item.parameters.len(), 2);
+
+        let item_id = get_item
+            .parameters
+            .iter()
+            .find(|p| p.name == "itemId")
+            .unwrap();
+        assert_eq!(item_id.description, Some("Path level item ID".to_string()));
+        assert_eq!(item_id.schema_type, Some("string".to_string()));
+    }
+
+    #[test]
+    fn test_parameter_override_operation_overrides_path() {
+        let spec = parse_file("tests/fixtures/parameter-override.yaml").unwrap();
+
+        // PUT overrides itemId parameter
+        let put_item = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/items/{itemId}" && e.method == HttpMethod::Put)
+            .unwrap();
+
+        // Should have 2 params: overridden itemId + inherited version
+        assert_eq!(put_item.parameters.len(), 2);
+
+        let item_id = put_item
+            .parameters
+            .iter()
+            .find(|p| p.name == "itemId")
+            .unwrap();
+        assert_eq!(
+            item_id.description,
+            Some("Operation level item ID (overridden)".to_string())
+        );
+        assert_eq!(item_id.schema_type, Some("integer".to_string()));
+    }
+
+    #[test]
+    fn test_parameter_override_can_change_required() {
+        let spec = parse_file("tests/fixtures/parameter-override.yaml").unwrap();
+
+        // DELETE overrides version parameter (required: false -> true)
+        let delete_item = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/items/{itemId}" && e.method == HttpMethod::Delete)
+            .unwrap();
+
+        let version = delete_item
+            .parameters
+            .iter()
+            .find(|p| p.name == "version")
+            .unwrap();
+        assert!(version.required);
+        assert_eq!(
+            version.description,
+            Some("Required version for delete".to_string())
+        );
     }
 }
