@@ -1,13 +1,13 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState},
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 
 use crate::app::App;
-use crate::model::HttpMethod;
+use crate::model::{Endpoint, HttpMethod, ParameterLocation};
 
 fn method_color(method: &HttpMethod) -> Color {
     match method {
@@ -33,6 +33,13 @@ pub fn render(frame: &mut Frame, app: &App) {
         .split(frame.area());
 
     // Left pane: Endpoint list
+    render_endpoint_list(frame, app, chunks[0]);
+
+    // Right pane: Detail view
+    render_detail_view(frame, app, chunks[1]);
+}
+
+fn render_endpoint_list(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let items: Vec<ListItem> = app
         .spec
         .endpoints
@@ -61,18 +68,205 @@ pub fn render(frame: &mut Frame, app: &App) {
     let mut list_state = ListState::default();
     list_state.select(Some(app.selected_index));
 
-    frame.render_stateful_widget(list, chunks[0], &mut list_state);
+    frame.render_stateful_widget(list, area, &mut list_state);
+}
 
-    // Right pane: Placeholder for detail view
-    let detail_block = Block::default()
-        .borders(Borders::ALL)
-        .title("Details");
-    frame.render_widget(detail_block, chunks[1]);
+fn render_detail_view(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    let endpoint = app.spec.endpoints.get(app.selected_index);
+
+    let content = match endpoint {
+        Some(ep) => build_detail_content(ep),
+        None => Text::raw("No endpoint selected"),
+    };
+
+    let paragraph = Paragraph::new(content)
+        .block(Block::default().borders(Borders::ALL).title("Details"))
+        .wrap(Wrap { trim: false });
+
+    frame.render_widget(paragraph, area);
+}
+
+fn build_detail_content(endpoint: &Endpoint) -> Text<'static> {
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Method + Path
+    lines.push(Line::from(vec![
+        Span::styled(
+            endpoint.method.to_string(),
+            Style::default()
+                .fg(method_color(&endpoint.method))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" "),
+        Span::styled(
+            endpoint.path.clone(),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+    ]));
+    lines.push(Line::raw(""));
+
+    // Summary
+    if let Some(summary) = &endpoint.summary {
+        lines.push(Line::styled(
+            summary.clone(),
+            Style::default().fg(Color::White),
+        ));
+        lines.push(Line::raw(""));
+    }
+
+    // Description
+    if let Some(description) = &endpoint.description {
+        lines.push(Line::styled(
+            description.clone(),
+            Style::default().fg(Color::Gray),
+        ));
+        lines.push(Line::raw(""));
+    }
+
+    // Parameters
+    if !endpoint.parameters.is_empty() {
+        lines.push(Line::styled(
+            "Parameters",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ));
+
+        // Group by location
+        for location in &[
+            ParameterLocation::Path,
+            ParameterLocation::Query,
+            ParameterLocation::Header,
+            ParameterLocation::Cookie,
+        ] {
+            let params: Vec<_> = endpoint
+                .parameters
+                .iter()
+                .filter(|p| &p.location == location)
+                .collect();
+
+            if !params.is_empty() {
+                lines.push(Line::styled(
+                    format!("  {}", location),
+                    Style::default().fg(Color::DarkGray),
+                ));
+
+                for param in params {
+                    let required_marker = if param.required { "*" } else { "" };
+                    let type_str = param
+                        .schema_type
+                        .as_deref()
+                        .unwrap_or("any");
+                    lines.push(Line::from(vec![
+                        Span::raw("    "),
+                        Span::styled(
+                            format!("{}{}", param.name, required_marker),
+                            Style::default().fg(Color::Yellow),
+                        ),
+                        Span::styled(
+                            format!(" ({})", type_str),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    ]));
+                    if let Some(desc) = &param.description {
+                        lines.push(Line::styled(
+                            format!("      {}", desc),
+                            Style::default().fg(Color::Gray),
+                        ));
+                    }
+                }
+            }
+        }
+        lines.push(Line::raw(""));
+    }
+
+    // Request Body
+    if let Some(body) = &endpoint.request_body {
+        lines.push(Line::styled(
+            format!(
+                "Request Body{}",
+                if body.required { " (required)" } else { "" }
+            ),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ));
+
+        if !body.content_types.is_empty() {
+            lines.push(Line::styled(
+                format!("  Content-Type: {}", body.content_types.join(", ")),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+
+        if let Some(desc) = &body.description {
+            lines.push(Line::styled(
+                format!("  {}", desc),
+                Style::default().fg(Color::Gray),
+            ));
+        }
+
+        if let Some(schema) = &body.schema {
+            lines.push(Line::styled(
+                format!("  Schema: {}", schema),
+                Style::default().fg(Color::Gray),
+            ));
+        }
+        lines.push(Line::raw(""));
+    }
+
+    // Responses
+    if !endpoint.responses.is_empty() {
+        lines.push(Line::styled(
+            "Responses",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ));
+
+        for (status, response) in &endpoint.responses {
+            let status_color = match status.chars().next() {
+                Some('2') => Color::Green,
+                Some('3') => Color::Yellow,
+                Some('4') => Color::Red,
+                Some('5') => Color::Magenta,
+                _ => Color::Gray,
+            };
+
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(status.clone(), Style::default().fg(status_color)),
+                Span::raw(" - "),
+                Span::styled(
+                    response.description.clone(),
+                    Style::default().fg(Color::White),
+                ),
+            ]));
+
+            if !response.content_types.is_empty() {
+                lines.push(Line::styled(
+                    format!("    Content-Type: {}", response.content_types.join(", ")),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+
+            if let Some(schema) = &response.schema {
+                lines.push(Line::styled(
+                    format!("    Schema: {}", schema),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+        }
+    }
+
+    Text::from(lines)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{Parameter, RequestBody, Response};
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_method_color() {
@@ -90,5 +284,136 @@ mod tests {
         assert!(method_width() >= "POST".len());
         assert!(method_width() >= "DELETE".len());
         assert!(method_width() >= "OPTIONS".len());
+    }
+
+    #[test]
+    fn test_build_detail_content_basic() {
+        let endpoint = Endpoint {
+            method: HttpMethod::Get,
+            path: "/users".to_string(),
+            summary: Some("Get all users".to_string()),
+            description: None,
+            operation_id: None,
+            tags: vec![],
+            parameters: vec![],
+            request_body: None,
+            responses: BTreeMap::new(),
+        };
+
+        let content = build_detail_content(&endpoint);
+        let text = content.to_string();
+
+        assert!(text.contains("GET"));
+        assert!(text.contains("/users"));
+        assert!(text.contains("Get all users"));
+    }
+
+    #[test]
+    fn test_build_detail_content_with_parameters() {
+        let endpoint = Endpoint {
+            method: HttpMethod::Get,
+            path: "/users/{id}".to_string(),
+            summary: None,
+            description: None,
+            operation_id: None,
+            tags: vec![],
+            parameters: vec![
+                Parameter {
+                    name: "id".to_string(),
+                    location: ParameterLocation::Path,
+                    description: Some("User ID".to_string()),
+                    required: true,
+                    schema_type: Some("integer".to_string()),
+                },
+                Parameter {
+                    name: "include".to_string(),
+                    location: ParameterLocation::Query,
+                    description: None,
+                    required: false,
+                    schema_type: Some("string".to_string()),
+                },
+            ],
+            request_body: None,
+            responses: BTreeMap::new(),
+        };
+
+        let content = build_detail_content(&endpoint);
+        let text = content.to_string();
+
+        assert!(text.contains("Parameters"));
+        assert!(text.contains("id*"));
+        assert!(text.contains("(integer)"));
+        assert!(text.contains("include"));
+    }
+
+    #[test]
+    fn test_build_detail_content_with_request_body() {
+        let endpoint = Endpoint {
+            method: HttpMethod::Post,
+            path: "/users".to_string(),
+            summary: None,
+            description: None,
+            operation_id: None,
+            tags: vec![],
+            parameters: vec![],
+            request_body: Some(RequestBody {
+                description: Some("User data".to_string()),
+                required: true,
+                content_types: vec!["application/json".to_string()],
+                schema: Some("User".to_string()),
+            }),
+            responses: BTreeMap::new(),
+        };
+
+        let content = build_detail_content(&endpoint);
+        let text = content.to_string();
+
+        assert!(text.contains("Request Body (required)"));
+        assert!(text.contains("application/json"));
+        assert!(text.contains("User data"));
+    }
+
+    #[test]
+    fn test_build_detail_content_with_responses() {
+        let mut responses = BTreeMap::new();
+        responses.insert(
+            "200".to_string(),
+            Response {
+                status_code: "200".to_string(),
+                description: "Successful response".to_string(),
+                content_types: vec!["application/json".to_string()],
+                schema: Some("UserList".to_string()),
+            },
+        );
+        responses.insert(
+            "404".to_string(),
+            Response {
+                status_code: "404".to_string(),
+                description: "Not found".to_string(),
+                content_types: vec![],
+                schema: None,
+            },
+        );
+
+        let endpoint = Endpoint {
+            method: HttpMethod::Get,
+            path: "/users".to_string(),
+            summary: None,
+            description: None,
+            operation_id: None,
+            tags: vec![],
+            parameters: vec![],
+            request_body: None,
+            responses,
+        };
+
+        let content = build_detail_content(&endpoint);
+        let text = content.to_string();
+
+        assert!(text.contains("Responses"));
+        assert!(text.contains("200"));
+        assert!(text.contains("Successful response"));
+        assert!(text.contains("404"));
+        assert!(text.contains("Not found"));
     }
 }
