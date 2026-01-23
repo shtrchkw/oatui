@@ -26,6 +26,16 @@ fn method_width() -> usize {
     7 // "OPTIONS" is the longest method name
 }
 
+fn status_code_color(status: &str) -> Color {
+    match status.chars().next() {
+        Some('2') => Color::Green,
+        Some('3') => Color::Yellow,
+        Some('4') => Color::Red,
+        Some('5') => Color::Magenta,
+        _ => Color::Gray,
+    }
+}
+
 pub fn render(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -47,7 +57,10 @@ fn render_endpoint_list(frame: &mut Frame, app: &App, area: ratatui::layout::Rec
         .map(|endpoint| {
             let method_str = format!("{:width$}", endpoint.method, width = method_width());
             let line = Line::from(vec![
-                Span::styled(method_str, Style::default().fg(method_color(&endpoint.method))),
+                Span::styled(
+                    method_str,
+                    Style::default().fg(method_color(&endpoint.method)),
+                ),
                 Span::raw(" "),
                 Span::raw(&endpoint.path),
             ]);
@@ -153,10 +166,7 @@ fn build_detail_content(endpoint: &Endpoint) -> Text<'static> {
 
                 for param in params {
                     let required_marker = if param.required { "*" } else { "" };
-                    let type_str = param
-                        .schema_type
-                        .as_deref()
-                        .unwrap_or("any");
+                    let type_str = param.schema_type.as_deref().unwrap_or("any");
                     lines.push(Line::from(vec![
                         Span::raw("    "),
                         Span::styled(
@@ -225,13 +235,7 @@ fn build_detail_content(endpoint: &Endpoint) -> Text<'static> {
         ));
 
         for (status, response) in &endpoint.responses {
-            let status_color = match status.chars().next() {
-                Some('2') => Color::Green,
-                Some('3') => Color::Yellow,
-                Some('4') => Color::Red,
-                Some('5') => Color::Magenta,
-                _ => Color::Gray,
-            };
+            let status_color = status_code_color(status);
 
             lines.push(Line::from(vec![
                 Span::raw("  "),
