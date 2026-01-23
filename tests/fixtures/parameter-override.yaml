@@ -1,0 +1,54 @@
+openapi: "3.0.0"
+info:
+  title: Parameter Override Test API
+  version: "1.0.0"
+
+paths:
+  /items/{itemId}:
+    # Path-level parameter - should be used by default
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        description: Path level item ID
+        schema:
+          type: string
+      - name: version
+        in: query
+        required: false
+        description: API version from path level
+        schema:
+          type: string
+
+    get:
+      summary: Get item (uses path-level params)
+      responses:
+        "200":
+          description: OK
+
+    put:
+      summary: Update item (overrides itemId param)
+      # Operation-level parameter overrides path-level
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          description: Operation level item ID (overridden)
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+
+    delete:
+      summary: Delete item (overrides version param)
+      parameters:
+        - name: version
+          in: query
+          required: true
+          description: Required version for delete
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
