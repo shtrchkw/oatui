@@ -1,20 +1,22 @@
 mod app;
+mod event;
 mod model;
 mod parser;
 mod ui;
 
 use std::env;
 use std::io;
+use std::time::Duration;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-use app::App;
+use app::{App, Focus};
+use event::Event;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -50,19 +52,28 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
     loop {
         terminal.draw(|frame| ui::render(frame, app))?;
 
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => app.quit(),
-                    KeyCode::Down | KeyCode::Char('j') => app.select_next(),
-                    KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
-                    _ => {}
-                }
-            }
-        }
+        let event = event::poll_event(Duration::from_millis(100))?;
+        handle_event(app, event);
 
         if app.should_quit {
             return Ok(());
         }
+    }
+}
+
+fn handle_event(app: &mut App, event: Event) {
+    match event {
+        Event::Quit => app.quit(),
+        Event::Enter => app.focus_detail(),
+        Event::Back if app.focus == Focus::Detail => app.focus_list(),
+        Event::NavigateDown => match app.focus {
+            Focus::List => app.select_next(),
+            Focus::Detail => app.scroll_down(),
+        },
+        Event::NavigateUp => match app.focus {
+            Focus::List => app.select_previous(),
+            Focus::Detail => app.scroll_up(),
+        },
+        Event::Back | Event::None => {}
     }
 }

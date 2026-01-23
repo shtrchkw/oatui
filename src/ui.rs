@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
+use crate::app::{App, Focus};
 use crate::model::{Endpoint, HttpMethod, ParameterLocation};
 
 fn method_color(method: &HttpMethod) -> Color {
@@ -33,6 +33,14 @@ fn status_code_color(status: &str) -> Color {
         Some('4') => Color::Red,
         Some('5') => Color::Magenta,
         _ => Color::Gray,
+    }
+}
+
+fn border_style(is_focused: bool) -> Style {
+    if is_focused {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
     }
 }
 
@@ -69,8 +77,14 @@ fn render_endpoint_list(frame: &mut Frame, app: &App, area: ratatui::layout::Rec
         .collect();
 
     let title = format!("{} v{}", app.spec.title, app.spec.version);
+
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style(app.focus == Focus::List)),
+        )
         .highlight_style(
             Style::default()
                 .bg(Color::DarkGray)
@@ -93,8 +107,14 @@ fn render_detail_view(frame: &mut Frame, app: &App, area: ratatui::layout::Rect)
     };
 
     let paragraph = Paragraph::new(content)
-        .block(Block::default().borders(Borders::ALL).title("Details"))
-        .wrap(Wrap { trim: false });
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Details")
+                .border_style(border_style(app.focus == Focus::Detail)),
+        )
+        .wrap(Wrap { trim: false })
+        .scroll((app.detail_scroll, 0));
 
     frame.render_widget(paragraph, area);
 }
