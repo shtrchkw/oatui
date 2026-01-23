@@ -130,7 +130,7 @@ fn convert_operation(
                 .values()
                 .next()
                 .and_then(|mt| mt.schema.as_ref())
-                .and_then(|s| schema_to_string(s, openapi));
+                .and_then(|s| schema_type_to_string(s, openapi));
 
             Some(RequestBody {
                 description: body.description.clone(),
@@ -150,44 +150,17 @@ fn convert_operation(
         };
 
         if let ReferenceOr::Item(resp) = response {
-            let content_types: Vec<String> = resp.content.keys().cloned().collect();
-            let schema = resp
-                .content
-                .values()
-                .next()
-                .and_then(|mt| mt.schema.as_ref())
-                .and_then(|s| schema_to_string(s, openapi));
-
             responses.insert(
                 status_code.clone(),
-                Response {
-                    status_code,
-                    description: resp.description.clone(),
-                    content_types,
-                    schema,
-                },
+                convert_response(&status_code, resp, openapi),
             );
         }
     }
 
-    // Handle default response
     if let Some(ReferenceOr::Item(resp)) = &op.responses.default {
-        let content_types: Vec<String> = resp.content.keys().cloned().collect();
-        let schema = resp
-            .content
-            .values()
-            .next()
-            .and_then(|mt| mt.schema.as_ref())
-            .and_then(|s| schema_to_string(s, openapi));
-
         responses.insert(
             "default".to_string(),
-            Response {
-                status_code: "default".to_string(),
-                description: resp.description.clone(),
-                content_types,
-                schema,
-            },
+            convert_response("default", resp, openapi),
         );
     }
 
@@ -262,6 +235,23 @@ fn resolve_parameter<'a>(
     }
 }
 
+fn convert_response(status_code: &str, resp: &openapiv3::Response, openapi: &OpenAPI) -> Response {
+    let content_types: Vec<String> = resp.content.keys().cloned().collect();
+    let schema = resp
+        .content
+        .values()
+        .next()
+        .and_then(|mt| mt.schema.as_ref())
+        .and_then(|s| schema_type_to_string(s, openapi));
+
+    Response {
+        status_code: status_code.to_string(),
+        description: resp.description.clone(),
+        content_types,
+        schema,
+    }
+}
+
 fn schema_type_to_string(schema: &ReferenceOr<Schema>, _openapi: &OpenAPI) -> Option<String> {
     match schema {
         ReferenceOr::Reference { reference } => {
@@ -274,10 +264,6 @@ fn schema_type_to_string(schema: &ReferenceOr<Schema>, _openapi: &OpenAPI) -> Op
             _ => None,
         },
     }
-}
-
-fn schema_to_string(schema: &ReferenceOr<Schema>, openapi: &OpenAPI) -> Option<String> {
-    schema_type_to_string(schema, openapi)
 }
 
 fn type_to_string(t: &Type) -> String {
@@ -301,7 +287,10 @@ mod tests {
 
         assert_eq!(spec.title, "Petstore API");
         assert_eq!(spec.version, "1.0.0");
-        assert_eq!(spec.description, Some("A sample API for testing oatui".to_string()));
+        assert_eq!(
+            spec.description,
+            Some("A sample API for testing oatui".to_string())
+        );
     }
 
     #[test]
@@ -348,9 +337,11 @@ mod tests {
     fn test_endpoint_summary() {
         let spec = parse_file("tests/fixtures/petstore.yaml").unwrap();
 
-        let list_pets = spec.endpoints.iter().find(|e| {
-            e.path == "/pets" && e.method == HttpMethod::Get
-        }).unwrap();
+        let list_pets = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/pets" && e.method == HttpMethod::Get)
+            .unwrap();
 
         assert_eq!(list_pets.summary, Some("List all pets".to_string()));
     }
@@ -359,9 +350,11 @@ mod tests {
     fn test_endpoint_parameters() {
         let spec = parse_file("tests/fixtures/petstore.yaml").unwrap();
 
-        let list_pets = spec.endpoints.iter().find(|e| {
-            e.path == "/pets" && e.method == HttpMethod::Get
-        }).unwrap();
+        let list_pets = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/pets" && e.method == HttpMethod::Get)
+            .unwrap();
 
         assert_eq!(list_pets.parameters.len(), 1);
         assert_eq!(list_pets.parameters[0].name, "limit");
@@ -372,11 +365,17 @@ mod tests {
     fn test_path_parameters() {
         let spec = parse_file("tests/fixtures/petstore.yaml").unwrap();
 
-        let get_pet = spec.endpoints.iter().find(|e| {
-            e.path == "/pets/{petId}" && e.method == HttpMethod::Get
-        }).unwrap();
+        let get_pet = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/pets/{petId}" && e.method == HttpMethod::Get)
+            .unwrap();
 
-        let pet_id_param = get_pet.parameters.iter().find(|p| p.name == "petId").unwrap();
+        let pet_id_param = get_pet
+            .parameters
+            .iter()
+            .find(|p| p.name == "petId")
+            .unwrap();
 
         assert_eq!(pet_id_param.location, ParameterLocation::Path);
         assert!(pet_id_param.required);
@@ -386,9 +385,11 @@ mod tests {
     fn test_request_body() {
         let spec = parse_file("tests/fixtures/petstore.yaml").unwrap();
 
-        let create_pet = spec.endpoints.iter().find(|e| {
-            e.path == "/pets" && e.method == HttpMethod::Post
-        }).unwrap();
+        let create_pet = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/pets" && e.method == HttpMethod::Post)
+            .unwrap();
 
         assert!(create_pet.request_body.is_some());
         let body = create_pet.request_body.as_ref().unwrap();
@@ -400,9 +401,11 @@ mod tests {
     fn test_responses() {
         let spec = parse_file("tests/fixtures/petstore.yaml").unwrap();
 
-        let get_pet = spec.endpoints.iter().find(|e| {
-            e.path == "/pets/{petId}" && e.method == HttpMethod::Get
-        }).unwrap();
+        let get_pet = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/pets/{petId}" && e.method == HttpMethod::Get)
+            .unwrap();
 
         assert!(get_pet.responses.contains_key("200"));
         assert!(get_pet.responses.contains_key("404"));

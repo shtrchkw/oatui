@@ -23,11 +23,10 @@ impl App {
 
     pub fn select_previous(&mut self) {
         if !self.spec.endpoints.is_empty() {
-            self.selected_index = if self.selected_index == 0 {
-                self.spec.endpoints.len() - 1
-            } else {
-                self.selected_index - 1
-            };
+            self.selected_index = self
+                .selected_index
+                .checked_sub(1)
+                .unwrap_or(self.spec.endpoints.len() - 1);
         }
     }
 
