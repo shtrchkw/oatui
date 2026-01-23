@@ -5,22 +5,20 @@ A fast TUI application for browsing OpenAPI specifications in the terminal.
 ## Features
 
 - Browse OpenAPI 3.0 specs without leaving your terminal
-- Vim-style keyboard navigation
-- Color-coded HTTP methods
+- Vim-style keyboard navigation with dual-pane focus
+- Color-coded HTTP methods (GET, POST, PUT, DELETE, etc.)
+- View endpoint details: parameters, request body, and responses
 - Fast startup and lightweight
 
 ## Installation
 
-```bash
-cargo install oatui
-```
-
-Or build from source:
+Build from source:
 
 ```bash
 git clone https://github.com/shtrchkw/oatui.git
 cd oatui
 cargo build --release
+./target/release/oatui <openapi-file>
 ```
 
 ## Usage
@@ -29,15 +27,26 @@ cargo build --release
 oatui openapi.yaml
 ```
 
+Supports both YAML and JSON OpenAPI 3.0 specifications.
+
 ## Key Bindings
+
+### List Pane (default)
 
 | Key | Action |
 |-----|--------|
 | `j` / `↓` | Next endpoint |
 | `k` / `↑` | Previous endpoint |
-| `Enter` | Toggle detail view |
-| `/` | Search |
-| `Esc` | Cancel / go back |
+| `Enter` | Focus detail pane |
+| `q` | Quit |
+
+### Detail Pane
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Scroll down |
+| `k` / `↑` | Scroll up |
+| `Esc` | Return to list pane |
 | `q` | Quit |
 
 ## License
