@@ -1,0 +1,73 @@
+openapi: "3.0.0"
+info:
+  title: Diverse API
+  version: "1.0.0"
+paths:
+  /users:
+    get:
+      summary: List all users
+      responses:
+        "200":
+          description: OK
+  /users/{id}:
+    get:
+      summary: Get user by ID
+      responses:
+        "200":
+          description: OK
+    delete:
+      summary: Delete user
+      responses:
+        "204":
+          description: Deleted
+  /posts:
+    get:
+      summary: List all posts
+      responses:
+        "200":
+          description: OK
+    post:
+      summary: Create a post
+      responses:
+        "201":
+          description: Created
+  /posts/{id}:
+    get:
+      summary: Get post by ID
+      responses:
+        "200":
+          description: OK
+    put:
+      summary: Update post
+      responses:
+        "200":
+          description: OK
+  /comments:
+    get:
+      summary: List comments
+      responses:
+        "200":
+          description: OK
+  /auth/login:
+    post:
+      summary: Login
+      responses:
+        "200":
+          description: OK
+  /auth/logout:
+    post:
+      summary: Logout
+      responses:
+        "200":
+          description: OK
+  /settings:
+    get:
+      summary: Get settings
+      responses:
+        "200":
+          description: OK
+    patch:
+      summary: Update settings
+      responses:
+        "200":
+          description: OK
