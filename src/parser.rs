@@ -226,7 +226,7 @@ fn resolve_parameter<'a>(
     }
 }
 
-fn convert_response(status_code: &str, resp: &openapiv3::Response, openapi: &OpenAPI) -> Response {
+fn convert_response(_status_code: &str, resp: &openapiv3::Response, openapi: &OpenAPI) -> Response {
     let content_types: Vec<String> = resp.content.keys().cloned().collect();
     let schema = resp
         .content
@@ -236,7 +236,6 @@ fn convert_response(status_code: &str, resp: &openapiv3::Response, openapi: &Ope
         .and_then(|s| schema_type_to_string(s, openapi));
 
     Response {
-        status_code: status_code.to_string(),
         description: resp.description.clone(),
         content_types,
         schema,

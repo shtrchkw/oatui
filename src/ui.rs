@@ -58,10 +58,20 @@ pub fn render(frame: &mut Frame, app: &App) {
 }
 
 fn render_endpoint_list(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    let (list_area, search_area) = if app.search_mode {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(3)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
     let items: Vec<ListItem> = app
-        .spec
-        .endpoints
+        .filtered_indices
         .iter()
+        .filter_map(|&idx| app.spec.endpoints.get(idx))
         .map(|endpoint| {
             let method_str = format!("{:width$}", endpoint.method, width = method_width());
             let line = Line::from(vec![
@@ -76,14 +86,25 @@ fn render_endpoint_list(frame: &mut Frame, app: &App, area: ratatui::layout::Rec
         })
         .collect();
 
-    let title = format!("{} v{}", app.spec.title, app.spec.version);
+    let title = if !app.search_query.is_empty() && !app.search_mode {
+        format!(
+            "{} v{} [{}] ({}/{})",
+            app.spec.title,
+            app.spec.version,
+            app.search_query,
+            app.filtered_indices.len(),
+            app.spec.endpoints.len()
+        )
+    } else {
+        format!("{} v{}", app.spec.title, app.spec.version)
+    };
 
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title(title)
-                .border_style(border_style(app.focus == Focus::List)),
+                .border_style(border_style(app.focus == Focus::List && !app.search_mode)),
         )
         .highlight_style(
             Style::default()
@@ -95,11 +116,33 @@ fn render_endpoint_list(frame: &mut Frame, app: &App, area: ratatui::layout::Rec
     let mut list_state = ListState::default();
     list_state.select(Some(app.selected_index));
 
-    frame.render_stateful_widget(list, area, &mut list_state);
+    frame.render_stateful_widget(list, list_area, &mut list_state);
+
+    if let Some(search_area) = search_area {
+        render_search_bar(frame, app, search_area);
+    }
+}
+
+fn render_search_bar(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    let search_text = format!("/{}", app.search_query);
+
+    let paragraph = Paragraph::new(search_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Search")
+                .border_style(Style::default().fg(Color::Yellow)),
+        );
+
+    frame.render_widget(paragraph, area);
+
+    let cursor_x = area.x + 2 + app.search_query.len() as u16;
+    let cursor_y = area.y + 1;
+    frame.set_cursor_position((cursor_x, cursor_y));
 }
 
 fn render_detail_view(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
-    let endpoint = app.spec.endpoints.get(app.selected_index);
+    let endpoint = app.selected_endpoint();
 
     let content = match endpoint {
         Some(ep) => build_detail_content(ep),
@@ -403,7 +446,6 @@ mod tests {
         responses.insert(
             "200".to_string(),
             Response {
-                status_code: "200".to_string(),
                 description: "Successful response".to_string(),
                 content_types: vec!["application/json".to_string()],
                 schema: Some("UserList".to_string()),
@@ -412,7 +454,6 @@ mod tests {
         responses.insert(
             "404".to_string(),
             Response {
-                status_code: "404".to_string(),
                 description: "Not found".to_string(),
                 content_types: vec![],
                 schema: None,

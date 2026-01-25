@@ -65,7 +65,6 @@ pub struct RequestBody {
 
 #[derive(Debug, Clone)]
 pub struct Response {
-    pub status_code: String,
     pub description: String,
     pub content_types: Vec<String>,
     pub schema: Option<String>,
@@ -77,7 +76,9 @@ pub struct Endpoint {
     pub path: String,
     pub summary: Option<String>,
     pub description: Option<String>,
+    #[allow(dead_code)]
     pub operation_id: Option<String>,
+    #[allow(dead_code)]
     pub tags: Vec<String>,
     pub parameters: Vec<Parameter>,
     pub request_body: Option<RequestBody>,
@@ -88,6 +89,7 @@ pub struct Endpoint {
 pub struct ApiSpec {
     pub title: String,
     pub version: String,
+    #[allow(dead_code)]
     pub description: Option<String>,
     pub endpoints: Vec<Endpoint>,
 }

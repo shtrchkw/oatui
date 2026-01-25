@@ -3,13 +3,16 @@ use std::time::Duration;
 use anyhow::Result;
 use crossterm::event::{self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Quit,
     NavigateUp,
     NavigateDown,
     Enter,
     Back,
+    Search,
+    Char(char),
+    Backspace,
     None,
 }
 
@@ -29,10 +32,13 @@ fn handle_key_event(key: KeyEvent) -> Event {
 
     match key.code {
         KeyCode::Char('q') => Event::Quit,
+        KeyCode::Char('/') => Event::Search,
         KeyCode::Esc => Event::Back,
         KeyCode::Enter => Event::Enter,
+        KeyCode::Backspace => Event::Backspace,
         KeyCode::Down | KeyCode::Char('j') => Event::NavigateDown,
         KeyCode::Up | KeyCode::Char('k') => Event::NavigateUp,
+        KeyCode::Char(c) => Event::Char(c),
         _ => Event::None,
     }
 }
@@ -94,8 +100,29 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_key_event_unknown() {
+    fn test_handle_key_event_char() {
         let event = handle_key_event(make_key_event(KeyCode::Char('x'), KeyEventKind::Press));
+        assert_eq!(event, Event::Char('x'));
+
+        let event = handle_key_event(make_key_event(KeyCode::Char('a'), KeyEventKind::Press));
+        assert_eq!(event, Event::Char('a'));
+    }
+
+    #[test]
+    fn test_handle_key_event_search() {
+        let event = handle_key_event(make_key_event(KeyCode::Char('/'), KeyEventKind::Press));
+        assert_eq!(event, Event::Search);
+    }
+
+    #[test]
+    fn test_handle_key_event_backspace() {
+        let event = handle_key_event(make_key_event(KeyCode::Backspace, KeyEventKind::Press));
+        assert_eq!(event, Event::Backspace);
+    }
+
+    #[test]
+    fn test_handle_key_event_unknown() {
+        let event = handle_key_event(make_key_event(KeyCode::Tab, KeyEventKind::Press));
         assert_eq!(event, Event::None);
     }
 }

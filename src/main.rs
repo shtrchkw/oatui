@@ -62,18 +62,33 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
 }
 
 fn handle_event(app: &mut App, event: Event) {
+    if app.search_mode {
+        handle_search_mode_event(app, event);
+        return;
+    }
+
     match event {
         Event::Quit => app.quit(),
+        Event::Search => app.enter_search_mode(),
         Event::Enter => app.focus_detail(),
         Event::Back if app.focus == Focus::Detail => app.focus_list(),
-        Event::NavigateDown => match app.focus {
-            Focus::List => app.select_next(),
-            Focus::Detail => app.scroll_down(),
-        },
-        Event::NavigateUp => match app.focus {
-            Focus::List => app.select_previous(),
-            Focus::Detail => app.scroll_up(),
-        },
-        Event::Back | Event::None => {}
+        Event::Back if !app.search_query.is_empty() => app.clear_search(),
+        Event::NavigateDown if app.focus == Focus::List => app.select_next(),
+        Event::NavigateDown => app.scroll_down(),
+        Event::NavigateUp if app.focus == Focus::List => app.select_previous(),
+        Event::NavigateUp => app.scroll_up(),
+        Event::Back | Event::None | Event::Char(_) | Event::Backspace => {}
+    }
+}
+
+fn handle_search_mode_event(app: &mut App, event: Event) {
+    match event {
+        Event::Back => app.cancel_search(),
+        Event::Enter => app.confirm_search(),
+        Event::Char(c) => app.search_push_char(c),
+        Event::Backspace => app.search_pop_char(),
+        Event::NavigateDown => app.select_next(),
+        Event::NavigateUp => app.select_previous(),
+        Event::Quit | Event::Search | Event::None => {}
     }
 }
