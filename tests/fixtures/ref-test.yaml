@@ -1,0 +1,65 @@
+openapi: "3.0.0"
+info:
+  title: Ref Test API
+  version: "1.0.0"
+paths:
+  /users:
+    post:
+      summary: Create user
+      requestBody:
+        $ref: "#/components/requestBodies/UserBody"
+      responses:
+        "201":
+          $ref: "#/components/responses/UserCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /users/{id}:
+    get:
+      summary: Get user
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/DefaultError"
+components:
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      description: User ID
+      schema:
+        type: string
+  requestBodies:
+    UserBody:
+      description: User data to create
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/User"
+  responses:
+    UserCreated:
+      description: User created successfully
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/User"
+    BadRequest:
+      description: Invalid request
+    DefaultError:
+      description: Unexpected error
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string

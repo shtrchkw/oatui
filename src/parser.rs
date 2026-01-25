@@ -126,24 +126,22 @@ fn convert_operation(
 
     let parameters: Vec<Parameter> = param_map.into_values().collect();
 
-    let request_body = op.request_body.as_ref().and_then(|rb| match rb {
-        ReferenceOr::Item(body) => {
-            let content_types: Vec<String> = body.content.keys().cloned().collect();
-            let schema = body
-                .content
-                .values()
-                .next()
-                .and_then(|mt| mt.schema.as_ref())
-                .and_then(|s| schema_type_to_string(s, openapi));
+    let request_body = op.request_body.as_ref().and_then(|rb| {
+        let body = resolve_request_body(rb, openapi)?;
+        let content_types: Vec<String> = body.content.keys().cloned().collect();
+        let schema = body
+            .content
+            .values()
+            .next()
+            .and_then(|mt| mt.schema.as_ref())
+            .and_then(|s| schema_type_to_string(s, openapi));
 
-            Some(RequestBody {
-                description: body.description.clone(),
-                required: body.required,
-                content_types,
-                schema,
-            })
-        }
-        ReferenceOr::Reference { .. } => None,
+        Some(RequestBody {
+            description: body.description.clone(),
+            required: body.required,
+            content_types,
+            schema,
+        })
     });
 
     let mut responses = BTreeMap::new();
@@ -153,19 +151,18 @@ fn convert_operation(
             StatusCode::Range(range) => format!("{}XX", range),
         };
 
-        if let ReferenceOr::Item(resp) = response {
-            responses.insert(
-                status_code.clone(),
-                convert_response(&status_code, resp, openapi),
-            );
+        if let Some(resp) = resolve_response(response, openapi) {
+            responses.insert(status_code.clone(), convert_response(&status_code, resp, openapi));
         }
     }
 
-    if let Some(ReferenceOr::Item(resp)) = &op.responses.default {
-        responses.insert(
-            "default".to_string(),
-            convert_response("default", resp, openapi),
-        );
+    if let Some(resp) = op
+        .responses
+        .default
+        .as_ref()
+        .and_then(|r| resolve_response(r, openapi))
+    {
+        responses.insert("default".to_string(), convert_response("default", resp, openapi));
     }
 
     Endpoint {
@@ -205,25 +202,52 @@ fn convert_parameter(param: &ReferenceOr<OApiParameter>, openapi: &OpenAPI) -> O
     })
 }
 
+/// Resolves a `ReferenceOr<T>` to `&T` by looking up the component if it's a reference.
+fn resolve_ref<'a, T, F>(
+    ref_or_item: &'a ReferenceOr<T>,
+    prefix: &str,
+    get_component: F,
+) -> Option<&'a T>
+where
+    F: FnOnce(&str) -> Option<&'a ReferenceOr<T>>,
+{
+    match ref_or_item {
+        ReferenceOr::Item(item) => Some(item),
+        ReferenceOr::Reference { reference } => {
+            let name = reference.strip_prefix(prefix)?;
+            match get_component(name)? {
+                ReferenceOr::Item(item) => Some(item),
+                ReferenceOr::Reference { .. } => None,
+            }
+        }
+    }
+}
+
 fn resolve_parameter<'a>(
     param: &'a ReferenceOr<OApiParameter>,
     openapi: &'a OpenAPI,
 ) -> Option<&'a OApiParameter> {
-    match param {
-        ReferenceOr::Item(p) => Some(p),
-        ReferenceOr::Reference { reference } => {
-            let name = reference.strip_prefix("#/components/parameters/")?;
-            openapi
-                .components
-                .as_ref()?
-                .parameters
-                .get(name)
-                .and_then(|p| match p {
-                    ReferenceOr::Item(p) => Some(p),
-                    _ => None,
-                })
-        }
-    }
+    resolve_ref(param, "#/components/parameters/", |name| {
+        openapi.components.as_ref()?.parameters.get(name)
+    })
+}
+
+fn resolve_request_body<'a>(
+    rb: &'a ReferenceOr<openapiv3::RequestBody>,
+    openapi: &'a OpenAPI,
+) -> Option<&'a openapiv3::RequestBody> {
+    resolve_ref(rb, "#/components/requestBodies/", |name| {
+        openapi.components.as_ref()?.request_bodies.get(name)
+    })
+}
+
+fn resolve_response<'a>(
+    resp: &'a ReferenceOr<openapiv3::Response>,
+    openapi: &'a OpenAPI,
+) -> Option<&'a openapiv3::Response> {
+    resolve_ref(resp, "#/components/responses/", |name| {
+        openapi.components.as_ref()?.responses.get(name)
+    })
 }
 
 fn convert_response(_status_code: &str, resp: &openapiv3::Response, openapi: &OpenAPI) -> Response {
@@ -490,5 +514,56 @@ mod tests {
             version.description,
             Some("Required version for delete".to_string())
         );
+    }
+
+    #[test]
+    fn test_resolve_request_body_ref() {
+        let spec = parse_file("tests/fixtures/ref-test.yaml").unwrap();
+
+        let create_user = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/users" && e.method == HttpMethod::Post)
+            .unwrap();
+
+        assert!(create_user.request_body.is_some());
+        let body = create_user.request_body.as_ref().unwrap();
+        assert!(body.required);
+        assert_eq!(body.description, Some("User data to create".to_string()));
+        assert!(body.content_types.contains(&"application/json".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_response_ref() {
+        let spec = parse_file("tests/fixtures/ref-test.yaml").unwrap();
+
+        let create_user = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/users" && e.method == HttpMethod::Post)
+            .unwrap();
+
+        assert!(create_user.responses.contains_key("201"));
+        let resp_201 = create_user.responses.get("201").unwrap();
+        assert_eq!(resp_201.description, "User created successfully");
+
+        assert!(create_user.responses.contains_key("400"));
+        let resp_400 = create_user.responses.get("400").unwrap();
+        assert_eq!(resp_400.description, "Invalid request");
+    }
+
+    #[test]
+    fn test_resolve_default_response_ref() {
+        let spec = parse_file("tests/fixtures/ref-test.yaml").unwrap();
+
+        let get_user = spec
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/users/{id}" && e.method == HttpMethod::Get)
+            .unwrap();
+
+        assert!(get_user.responses.contains_key("default"));
+        let default_resp = get_user.responses.get("default").unwrap();
+        assert_eq!(default_resp.description, "Unexpected error");
     }
 }
